@@ -12,7 +12,6 @@ import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
-import com.pedropathing.geometry.Point;
 import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -27,7 +26,8 @@ public class PedroAutoRed extends OpMode {
     private Follower follower;
     private StarterShooter shooter;
     private PanelsDashboardHelper dashboard;
-    
+    private PedroAutonomousBuilder autoBuilder;
+
     private PathChain leaveLaunchLine;
     private PathChain moveToBase;
     
@@ -36,17 +36,6 @@ public class PedroAutoRed extends OpMode {
      * Mirror of blue alliance pose across X-axis
      */
     private static final Pose START_POSE = new Pose(-56.5, 8.5, Math.toRadians(90));
-    
-    private enum State {
-        LEAVE_LAUNCH_LINE,
-        TURN_TO_GOAL,
-        SHOOT_PRELOADS,
-        MOVE_TO_BASE,
-        IDLE
-    }
-    
-    private State currentState = State.LEAVE_LAUNCH_LINE;
-    private double stateStartTime = 0;
     
     @Override
     public void init() {
@@ -57,7 +46,7 @@ public class PedroAutoRed extends OpMode {
         dashboard.logLine("");
         
         try {
-            follower = PedroConstants.createFollower(hardwareMap);
+            follower = Constants.createFollower(hardwareMap);
             follower.setStartingPose(START_POSE);
             dashboard.logLine("✅ Pedro Pathing initialized");
         } catch (Exception e) {
@@ -76,6 +65,9 @@ public class PedroAutoRed extends OpMode {
         if (follower != null) {
             buildPaths();
             dashboard.logLine("✅ Paths built");
+
+            buildAutonomousSequence();
+            dashboard.logLine("✅ Autonomous sequence configured");
         }
         
         dashboard.logLine("");
@@ -85,32 +77,40 @@ public class PedroAutoRed extends OpMode {
         dashboard.update();
     }
     
+    private void buildAutonomousSequence() {
+        autoBuilder = new PedroAutonomousBuilder(follower)
+            .withShooter(shooter)
+            .addPath(leaveLaunchLine, "Leave Launch Line")
+            .addTurnToHeading(Math.toRadians(66))  // Adjust angle for red alliance
+            .addShootAction(2, StarterShooter.ShootingPreset.SHORT_RANGE)
+            .addPath(moveToBase, "Move to Base");
+    }
+
     private void buildPaths() {
         // Path 1: Leave LAUNCH LINE
         leaveLaunchLine = follower.pathBuilder()
-                .addBezierLine(
-                    new Point(START_POSE.getX(), START_POSE.getY(), Point.CARTESIAN),
-                    new Point(START_POSE.getX(), START_POSE.getY() + 30, Point.CARTESIAN)
-                )
+                .addPath(new BezierLine(
+                    new Pose(START_POSE.getX(), START_POSE.getY(), START_POSE.getHeading()),
+                    new Pose(START_POSE.getX(), START_POSE.getY() + 30, START_POSE.getHeading())
+                ))
                 .setLinearHeadingInterpolation(START_POSE.getHeading(), START_POSE.getHeading())
                 .build();
         
         // Path 2: Move toward BASE
         Pose afterLeaving = new Pose(START_POSE.getX(), START_POSE.getY() + 30, START_POSE.getHeading());
         moveToBase = follower.pathBuilder()
-                .addBezierLine(
-                    new Point(afterLeaving.getX(), afterLeaving.getY(), Point.CARTESIAN),
-                    new Point(afterLeaving.getX() + 20, afterLeaving.getY() + 20, Point.CARTESIAN)
-                )
+                .addPath(new BezierLine(
+                    new Pose(afterLeaving.getX(), afterLeaving.getY(), afterLeaving.getHeading()),
+                    new Pose(afterLeaving.getX() + 20, afterLeaving.getY() + 20, Math.toRadians(135))
+                ))
                 .setLinearHeadingInterpolation(afterLeaving.getHeading(), Math.toRadians(135))
                 .build();
     }
     
     @Override
     public void start() {
-        if (follower != null) {
-            follower.followPath(leaveLaunchLine);
-            stateStartTime = getRuntime();
+        if (autoBuilder != null) {
+            autoBuilder.start();
             dashboard.logLine("▶️  Autonomous started!");
             dashboard.update();
         }
@@ -118,7 +118,7 @@ public class PedroAutoRed extends OpMode {
     
     @Override
     public void loop() {
-        if (follower == null) {
+        if (follower == null || autoBuilder == null) {
             dashboard.logLine("❌ Cannot run - initialization failed");
             dashboard.update();
             return;
@@ -130,82 +130,17 @@ public class PedroAutoRed extends OpMode {
             shooter.update(gamepad1);
         }
         
-        switch (currentState) {
-            case LEAVE_LAUNCH_LINE:
-                if (!follower.isBusy()) {
-                    currentState = State.TURN_TO_GOAL;
-                    stateStartTime = getRuntime();
-                }
-                break;
-                
-            case TURN_TO_GOAL:
-                double targetHeading = Math.toRadians(66);  // Mirror of blue angle
-                follower.setMaxPower(0.5);
-                follower.update();
-                
-                double currentHeading = follower.getPose().getHeading();
-                double headingError = Math.abs(targetHeading - currentHeading);
-                
-                if (headingError < Math.toRadians(5) || (getRuntime() - stateStartTime) > 2.0) {
-                    currentState = State.SHOOT_PRELOADS;
-                    stateStartTime = getRuntime();
-                    
-                    if (shooter != null) {
-                        shooter.setPreset(StarterShooter.ShootingPreset.SHORT_RANGE);
-                        shooter.spinUp();
-                    }
-                }
-                break;
-                
-            case SHOOT_PRELOADS:
-                double shootTime = getRuntime() - stateStartTime;
-                
-                if (shootTime > 1.5 && shooter != null && shooter.isAtSpeed()) {
-                    if (shootTime < 2.0) {
-                        shooter.fireOnce();
-                    }
-                    else if (shootTime > 2.5 && shootTime < 3.0) {
-                        shooter.fireOnce();
-                    }
-                    else if (shootTime > 3.5) {
-                        if (shooter != null) {
-                            shooter.stop();
-                        }
-                        currentState = State.MOVE_TO_BASE;
-                        stateStartTime = getRuntime();
-                        follower.followPath(moveToBase);
-                    }
-                }
-                else if (shootTime > 5.0) {
-                    if (shooter != null) {
-                        shooter.stop();
-                    }
-                    currentState = State.MOVE_TO_BASE;
-                    stateStartTime = getRuntime();
-                    follower.followPath(moveToBase);
-                }
-                break;
-                
-            case MOVE_TO_BASE:
-                if (!follower.isBusy()) {
-                    currentState = State.IDLE;
-                }
-                break;
-                
-            case IDLE:
-                break;
-        }
-        
-        updateTelemetry();
+        String currentStep = autoBuilder.update();
+        updateTelemetry(currentStep);
     }
     
-    private void updateTelemetry() {
+    private void updateTelemetry(String currentStep) {
         Pose currentPose = follower.getPose();
-        
         dashboard.clearFieldOverlays();
         dashboard.setRobotPose(currentPose);
         
-        dashboard.log("State", currentState.toString());
+        dashboard.log("Current Step", currentStep);
+        dashboard.log("Progress", "%d/%d", autoBuilder.getCurrentStepIndex() + 1, autoBuilder.getTotalSteps());
         dashboard.log("X Position", "%.1f in", currentPose.getX());
         dashboard.log("Y Position", "%.1f in", currentPose.getY());
         dashboard.log("Heading", "%.1f°", Math.toDegrees(currentPose.getHeading()));
@@ -218,7 +153,6 @@ public class PedroAutoRed extends OpMode {
         
         dashboard.logLine("");
         dashboard.log("Runtime", "%.1f sec", getRuntime());
-        
         dashboard.update();
     }
 }

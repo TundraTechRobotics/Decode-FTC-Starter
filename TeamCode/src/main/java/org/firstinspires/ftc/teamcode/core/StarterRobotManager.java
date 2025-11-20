@@ -25,11 +25,16 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
  * - Graceful degradation: Robot continues working even if some hardware fails
  * - Clear error messages: Helps teams debug hardware configuration issues
  * - Extensible design: Easy to add new subsystems later
- * 
+ * - Sloth hot reload compatible: Changes to this class deploy in < 1 second!
+ *
  * How to Use:
  * 1. Create instance in your OpMode's runOpMode() method
  * 2. Call update(gamepad1, gamepad2) in your main loop
  * 3. Access subsystems via getDrive() and getShooter()
+ *
+ * Development Tip:
+ * - Use 'deploySloth' Gradle task for instant code updates during development
+ * - See SLOTH_SETUP.md in project root for complete hot reload guide
  */
 public class StarterRobotManager {
     

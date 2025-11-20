@@ -2,6 +2,22 @@
 
 This repository contains the public FTC SDK for the DECODE (2025-2026) competition season.
 
+## ⚡ NEW: Sloth Hot Reload Integration
+
+**This project now includes Sloth** - the fastest hot code reload library for FTC! Deploy code changes in **under 1 second** instead of waiting 40+ seconds.
+
+📖 **[Complete Setup Guide: SLOTH_SETUP.md](SLOTH_SETUP.md)**
+
+Key benefits:
+- ⚡ Lightning-fast deployment (< 1 second)
+- 💾 Changes persist across robot restarts
+- 🔄 Safe hot reload while code is running
+- 📦 Pre-configured and ready to use
+
+After your first standard install, use the `deploySloth` Gradle task for instant code updates!
+
+---
+
 ## Welcome!
 This GitHub repository contains the source code that is used to build an Android app to control a *FIRST* Tech Challenge competition robot.  To use this SDK, download/clone the entire project to your local computer.
 

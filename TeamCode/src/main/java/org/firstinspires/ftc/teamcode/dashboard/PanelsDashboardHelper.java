@@ -230,16 +230,26 @@ public class PanelsDashboardHelper {
             return;  // Panels not available
         }
         
+        // Validate inputs - skip if NaN
+        if (Double.isNaN(xInches) || Double.isNaN(yInches) || Double.isNaN(headingDeg)) {
+            return;
+        }
+
         try {
+            // Set style for robot drawing
+            panelsField.setStyle(ROBOT_STYLE);
+
             // Draw robot as a circle
-            panelsField.drawCircle(xInches, yInches, ROBOT_RADIUS, ROBOT_STYLE);
-            
+            panelsField.moveCursor(xInches, yInches);
+            panelsField.circle(ROBOT_RADIUS);
+
             // Draw heading indicator (line from center to edge)
             double headingRad = Math.toRadians(headingDeg);
             double endX = xInches + ROBOT_RADIUS * Math.cos(headingRad);
             double endY = yInches + ROBOT_RADIUS * Math.sin(headingRad);
-            panelsField.drawLine(xInches, yInches, endX, endY, ROBOT_STYLE);
-            
+            panelsField.moveCursor(xInches, yInches);
+            panelsField.line(endX, endY);
+
         } catch (Exception e) {
             panelsAvailable = false;
         }
@@ -249,12 +259,36 @@ public class PanelsDashboardHelper {
      * Draw robot position from Pedro Pose object
      * 
      * Convenience method that extracts position and heading from Pose.
-     * 
+     * Includes validation to handle null or invalid pose data.
+     *
      * @param pose Pedro Pose object (x, y, heading in radians)
      */
     public void setRobotPose(Pose pose) {
-        double headingDeg = Math.toDegrees(pose.getHeading());
-        setRobotPose(pose.getX(), pose.getY(), headingDeg);
+        if (pose == null || Double.isNaN(pose.getX()) || Double.isNaN(pose.getY()) || Double.isNaN(pose.getHeading())) {
+            return;
+        }
+
+        if (!panelsAvailable || panelsField == null) {
+            return;
+        }
+
+        try {
+            // Set style for robot drawing
+            panelsField.setStyle(ROBOT_STYLE);
+
+            // Draw robot as a circle
+            panelsField.moveCursor(pose.getX(), pose.getY());
+            panelsField.circle(ROBOT_RADIUS);
+
+            // Draw heading indicator (line from center to edge)
+            double x2 = pose.getX() + ROBOT_RADIUS * Math.cos(pose.getHeading());
+            double y2 = pose.getY() + ROBOT_RADIUS * Math.sin(pose.getHeading());
+            panelsField.moveCursor(pose.getX(), pose.getY());
+            panelsField.line(x2, y2);
+
+        } catch (Exception e) {
+            panelsAvailable = false;
+        }
     }
     
     /**
@@ -270,12 +304,59 @@ public class PanelsDashboardHelper {
         }
         
         try {
+            // Set style for path drawing
+            panelsField.setStyle(PATH_STYLE);
+
             // Draw line segments between consecutive waypoints
-            for (int i = 0; i < waypoints.size() - 1; i++) {
-                double[] start = waypoints.get(i);
-                double[] end = waypoints.get(i + 1);
-                
-                panelsField.drawLine(start[0], start[1], end[0], end[1], PATH_STYLE);
+            double[] start = waypoints.get(0);
+            panelsField.moveCursor(start[0], start[1]);
+
+            for (int i = 1; i < waypoints.size(); i++) {
+                double[] point = waypoints.get(i);
+                panelsField.line(point[0], point[1]);
+                panelsField.moveCursor(point[0], point[1]);
+            }
+        } catch (Exception e) {
+            panelsAvailable = false;
+        }
+    }
+
+    /**
+     * Draw a Pedro Pathing path on the field view
+     *
+     * Uses Pedro's built-in getPanelsDrawingPoints() method for accurate path visualization.
+     * Includes NaN validation and cleanup.
+     *
+     * @param path Pedro Path object to draw
+     */
+    public void drawPedroPath(com.pedropathing.paths.Path path) {
+        if (!panelsAvailable || panelsField == null || path == null) {
+            return;
+        }
+
+        try {
+            double[][] points = path.getPanelsDrawingPoints();
+
+            if (points == null || points.length < 2 || points[0].length == 0) {
+                return;
+            }
+
+            // Clean up NaN values
+            for (int i = 0; i < points[0].length; i++) {
+                for (int j = 0; j < points.length; j++) {
+                    if (Double.isNaN(points[j][i])) {
+                        points[j][i] = 0;
+                    }
+                }
+            }
+
+            // Set style and draw path
+            panelsField.setStyle(PATH_STYLE);
+            panelsField.moveCursor(points[0][0], points[1][0]);
+
+            // Draw lines connecting each point
+            for (int i = 1; i < points[0].length; i++) {
+                panelsField.line(points[0][i], points[1][i]);
             }
         } catch (Exception e) {
             panelsAvailable = false;
@@ -297,7 +378,12 @@ public class PanelsDashboardHelper {
         }
         
         try {
-            panelsField.drawCircle(xInches, yInches, radius, TARGET_STYLE);
+            // Set style for target drawing
+            panelsField.setStyle(TARGET_STYLE);
+
+            // Draw target as a circle
+            panelsField.moveCursor(xInches, yInches);
+            panelsField.circle(radius);
         } catch (Exception e) {
             panelsAvailable = false;
         }
@@ -306,19 +392,13 @@ public class PanelsDashboardHelper {
     /**
      * Clear all field overlays
      * 
-     * Removes all robot markers, paths, and targets from field view.
-     * Call this before drawing updated positions.
+     * Note: Panels Field automatically redraws on each update() call.
+     * The field is effectively cleared when you draw new content and call update().
+     * This method is kept for API compatibility but does nothing.
      */
     public void clearFieldOverlays() {
-        if (!panelsAvailable || panelsField == null) {
-            return;
-        }
-        
-        try {
-            panelsField.clearDrawings();
-        } catch (Exception e) {
-            panelsAvailable = false;
-        }
+        // No-op: Panels Field redraws automatically on update()
+        // Each update() call shows only what was drawn since the last update()
     }
     
     // ═══════════════════════════════════════════════════════════════
@@ -340,6 +420,15 @@ public class PanelsDashboardHelper {
         if (panelsAvailable && panelsTelemetry != null) {
             try {
                 panelsTelemetry.update(sdkTelemetry);
+            } catch (Exception e) {
+                panelsAvailable = false;
+            }
+        }
+
+        // Update Panels field view if available
+        if (panelsAvailable && panelsField != null) {
+            try {
+                panelsField.update();
             } catch (Exception e) {
                 panelsAvailable = false;
             }
